@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Restaurant, Order, OrderStatus, Branch } from '../../types';
 import { db } from '../../lib/database';
+import { api } from '../../services/api';
 import { playKitchenChime } from '../../lib/audioAlert';
 import {
   ChefHat,
@@ -70,24 +71,35 @@ export const KitchenDisplayView: React.FC<KitchenDisplayViewProps> = ({
   const activeOrders = filteredOrders.filter((o) => o.status !== 'served' && o.status !== 'cancelled');
   const completedOrders = filteredOrders.filter((o) => o.status === 'served');
 
-  const handleAdvanceStatus = (order: Order) => {
+  const handleAdvanceStatus = async (order: Order) => {
     let nextStatus: OrderStatus = 'accepted';
     if (order.status === 'pending') nextStatus = 'accepted';
     else if (order.status === 'accepted') nextStatus = 'preparing';
     else if (order.status === 'preparing') nextStatus = 'ready';
     else if (order.status === 'ready') nextStatus = 'served';
 
+    try {
+      await api.updateKitchenOrderStatus(order.id, nextStatus, 'Advanced by Kitchen Station');
+    } catch (e) {
+      // Local fallback handled below
+    }
     db.updateOrderStatus(order.id, restaurant.id, nextStatus, 'Kitchen Station');
   };
 
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     if (!cancellingOrderId) return;
+    const reason = cancelReason.trim() || 'Item 86ed or kitchen request';
+    try {
+      await api.updateKitchenOrderStatus(cancellingOrderId, 'cancelled' as OrderStatus, reason);
+    } catch (e) {
+      // Local fallback handled below
+    }
     db.updateOrderStatus(
       cancellingOrderId,
       restaurant.id,
       'cancelled',
       'Kitchen Station',
-      cancelReason.trim() || 'Item 86ed or kitchen request'
+      reason
     );
     setCancellingOrderId(null);
     setCancelReason('');

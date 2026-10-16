@@ -11,6 +11,7 @@ import {
   OrderStatus
 } from '../../types';
 import { db } from '../../lib/database';
+import { api } from '../../services/api';
 import { TableTentCardModal } from './TableTentCardModal';
 import {
   LayoutDashboard,
@@ -143,10 +144,10 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     db.toggleItemAvailability(itemId, restaurant.id);
   };
 
-  const handleCreateMenuItem = (e: React.FormEvent) => {
+  const handleCreateMenuItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemForm.name.trim() || !newItemForm.categoryId) return;
-    db.addMenuItem(restaurant.id, {
+    const itemData = {
       name: newItemForm.name,
       category_id: newItemForm.categoryId,
       price: Number(newItemForm.price),
@@ -156,15 +157,29 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
       is_available: true,
       prep_time_minutes: Number(newItemForm.prepMinutes),
       sort_order: menuItems.length + 1
-    });
+    };
+    try {
+      await api.createMenuItem(itemData);
+    } catch (err) {}
+    db.addMenuItem(restaurant.id, itemData);
     setIsAddItemOpen(false);
     setNewItemForm({ name: '', categoryId: '', price: 15.0, description: '', prepMinutes: 10, dietary: 'vegetarian' });
   };
 
-  const handleCreateTable = (e: React.FormEvent) => {
+  const handleCreateTable = async (e: React.FormEvent) => {
     e.preventDefault();
     const branchId = newTableForm.branchId || branches[0]?.id;
     if (!branchId || !newTableForm.label.trim()) return;
+
+    try {
+      await api.createAdminTable({
+        branch_id: branchId,
+        table_number: newTableForm.tableNumber || `${tables.length + 1}`,
+        label: newTableForm.label,
+        capacity: Number(newTableForm.capacity),
+        location_area: newTableForm.locationArea
+      });
+    } catch (err) {}
 
     db.addTable(restaurant.id, branchId, {
       table_number: newTableForm.tableNumber || `${tables.length + 1}`,
@@ -199,8 +214,11 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     setNewStaffForm({ name: '', email: '', role: 'kitchen_staff' });
   };
 
-  const handleRegenerateQR = (table: RestaurantTable) => {
+  const handleRegenerateQR = async (table: RestaurantTable) => {
     if (window.confirm(`Regenerate QR token for ${table.label}? Previous token will be revoked.`)) {
+      try {
+        await api.generateTableQR(table.id);
+      } catch (err) {}
       db.regenerateQRToken(restaurant.id, table.branch_id, table.id);
     }
   };
@@ -213,9 +231,9 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
     }
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    db.updateRestaurant(restaurant.id, {
+    const updates = {
       name: profileForm.name,
       tagline: profileForm.tagline,
       description: profileForm.description,
@@ -227,7 +245,11 @@ export const RestaurantAdminView: React.FC<RestaurantAdminViewProps> = ({
       tax_rate_percent: Number(profileForm.tax_rate_percent),
       service_charge_percent: Number(profileForm.service_charge_percent),
       is_ordering_enabled: profileForm.is_ordering_enabled
-    });
+    };
+    try {
+      await api.updateAdminRestaurant(updates);
+    } catch (err) {}
+    db.updateRestaurant(restaurant.id, updates);
     setSaveSuccessMsg('Settings saved successfully.');
     setTimeout(() => setSaveSuccessMsg(null), 3000);
   };

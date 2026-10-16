@@ -1,5 +1,6 @@
 import { StaffMember, StaffRole, Restaurant } from '../types';
 import { db } from './database';
+import { api } from '../services/api';
 
 const SESSION_STORAGE_KEY = 'pentaprizm_auth_session_v1';
 const PASSWORDS_STORAGE_KEY = 'pentaprizm_passwords_v1';
@@ -125,6 +126,37 @@ class AuthService {
 
     if (!email || !password) {
       return { success: false, error: 'Please enter both email and password.' };
+    }
+
+    // Try backend REST API first
+    try {
+      const apiRes = await api.login({
+        email,
+        password,
+        restaurantId: params.targetRestaurantId
+      });
+      if (apiRes && apiRes.token && apiRes.user) {
+        if (params.requiredPortal === 'admin' && apiRes.user.role !== 'restaurant_admin' && apiRes.user.role !== 'manager' && apiRes.user.role !== 'super_admin') {
+          return { success: false, error: 'Access Denied: Kitchen staff accounts cannot access the Restaurant Admin dashboard.' };
+        }
+        if (params.requiredPortal === 'kitchen' && !['kitchen_staff', 'manager', 'restaurant_admin', 'super_admin'].includes(apiRes.user.role)) {
+          return { success: false, error: 'Access Denied: You do not have operational kitchen permissions for this restaurant.' };
+        }
+        if (params.requiredPortal === 'superadmin' && apiRes.user.role !== 'super_admin') {
+          return { success: false, error: 'Access Denied: Only platform super administrators may access this portal.' };
+        }
+        const session: AuthSession = {
+          token: apiRes.token,
+          user: apiRes.user,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        };
+        this.saveSession(session);
+        return { success: true, user: apiRes.user };
+      }
+    } catch (apiErr: any) {
+      if (apiErr.message && !apiErr.message.includes('Failed to fetch') && !apiErr.message.includes('NetworkError') && !apiErr.message.includes('Load failed')) {
+        return { success: false, error: apiErr.message };
+      }
     }
 
     // 1. Check Super Admin credential
@@ -280,6 +312,32 @@ class AuthService {
       return { success: false, error: 'An account with this email address already exists. Please sign in instead.' };
     }
 
+    // Try backend REST API first
+    try {
+      const apiRes = await api.registerAdmin({
+        name,
+        email,
+        password: params.password,
+        restaurantName,
+        tagline: `Crafted Dining at ${restaurantName}`
+      });
+      if (apiRes && apiRes.token && apiRes.user) {
+        this.userPasswords[email] = params.password;
+        this.savePasswords();
+        const session: AuthSession = {
+          token: apiRes.token,
+          user: apiRes.user,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        };
+        this.saveSession(session);
+        return { success: true, user: apiRes.user, restaurant: apiRes.restaurant };
+      }
+    } catch (apiErr: any) {
+      if (apiErr.message && !apiErr.message.includes('Failed to fetch') && !apiErr.message.includes('NetworkError') && !apiErr.message.includes('Load failed')) {
+        return { success: false, error: apiErr.message };
+      }
+    }
+
     try {
       const newRestaurant = db.createTenant({
         name: restaurantName,
@@ -322,6 +380,7 @@ class AuthService {
   }
 
   public logout() {
+    api.logout().catch(() => {});
     this.saveSession(null);
   }
 }

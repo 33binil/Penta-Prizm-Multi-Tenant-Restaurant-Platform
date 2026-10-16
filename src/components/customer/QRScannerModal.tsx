@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { ValidatedQRSession, Restaurant, RestaurantTable, QRToken } from '../../types';
 import { db } from '../../lib/database';
+import { api } from '../../services/api';
 import { Camera, X, AlertCircle, QrCode, Check } from 'lucide-react';
 import { Button } from '../ui/Button';
 
@@ -109,10 +110,31 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     validateAndUnlock(token);
   };
 
-  const validateAndUnlock = (token: string) => {
+  const validateAndUnlock = async (token: string) => {
     setErrorMessage(null);
     setIsValidating(true);
 
+    try {
+      const response = await api.validateQRToken(token);
+      setIsValidating(false);
+      if (response && response.session) {
+        if (response.session.restaurant.id !== restaurant.id) {
+          setErrorMessage(`This QR belongs to "${response.session.restaurant.name}". Cross-restaurant QR codes are not allowed.`);
+          return;
+        }
+        onSuccess(response.session);
+        return;
+      }
+    } catch (apiErr: any) {
+      // If backend explicitly rejected invalid QR, show message
+      if (apiErr.message && !apiErr.message.includes('Failed to fetch') && !apiErr.message.includes('NetworkError')) {
+        setIsValidating(false);
+        setErrorMessage(apiErr.message);
+        return;
+      }
+    }
+
+    // Fallback to local database validation
     setTimeout(() => {
       const result = db.validateQRToken(token);
       setIsValidating(false);
@@ -128,7 +150,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
       }
 
       onSuccess(result.session);
-    }, 200);
+    }, 150);
   };
 
   return (

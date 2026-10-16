@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ValidatedQRSession, CartItem, Order, PaymentMethod } from '../../types';
 import { db } from '../../lib/database';
+import { api } from '../../services/api';
 import confetti from 'canvas-confetti';
 import { X, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
@@ -38,12 +39,42 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      const order = db.createOrder(session, cart, {
-        customerName: customerName.trim() || undefined,
-        customerPhone: customerPhone.trim() || undefined,
-        customerNote: customerNote.trim() || undefined,
-        paymentMethod
-      });
+      // 1. Try submitting to backend REST API
+      let order: Order;
+      try {
+        const payload = {
+          restaurantId: session.restaurant.id,
+          branchId: session.branch.id,
+          tableId: session.table.id,
+          tableLabel: session.table.label,
+          branchName: session.branch.name,
+          paymentMethod,
+          customerNotes: customerNote.trim() || undefined,
+          items: cart.map(item => ({
+            menuItemId: item.menuItem.id,
+            quantity: item.quantity,
+            selectedAddons: item.selectedAddons,
+            specialInstructions: item.specialInstructions
+          }))
+        };
+        const res = await api.createOrder(payload);
+        order = res.order;
+        // Keep local database state synchronized for instant UI update
+        db.createOrder(session, cart, {
+          customerName: customerName.trim() || undefined,
+          customerPhone: customerPhone.trim() || undefined,
+          customerNote: customerNote.trim() || undefined,
+          paymentMethod
+        });
+      } catch (apiErr: any) {
+        // Fallback to local DB creation if API is offline
+        order = db.createOrder(session, cart, {
+          customerName: customerName.trim() || undefined,
+          customerPhone: customerPhone.trim() || undefined,
+          customerNote: customerNote.trim() || undefined,
+          paymentMethod
+        });
+      }
 
       confetti({
         particleCount: 40,
