@@ -1,0 +1,6 @@
+{
+  "name": "Penta Prizm — Multi-Tenant Restaurant SaaS Platform",
+  "description": "Multi-tenant restaurant and café ordering SaaS platform with secure QR table validation, live order management, kitchen display system, and tenant administration.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
